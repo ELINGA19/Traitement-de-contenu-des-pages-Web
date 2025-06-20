@@ -1,74 +1,69 @@
-from typing import List, Dict, Set
-import os
 import re
+from html_parser import analyser_elements
 
-class SimpleIndexer:
-    def __init__(self):
-        self.index: Dict[str, Set[str]] = {}
-        self.documents_lines: Dict[str, List[str]] = {}
+def calculer_taux_erreur(html):
+    """
+    Calcule le pourcentage d'erreurs dans les balises HTML.
+    """
+    elements = analyser_elements(html)
+    pile = []
+    erreurs = 0
 
-    def index_documents(self, docs_paths: List[str], encoding: str = 'utf-8'):
-        for path in docs_paths:
-            self.index_document(path, encoding)
+    for elem in elements:
+        nom = elem['nom']
+        if elem['type'] == 'ouvre':
+            pile.append(nom)
+        elif elem['type'] == 'ferme':
+            if pile and pile[-1] == nom:
+                pile.pop()
+            else:
+                erreurs += 1
 
-    def index_document(self, file_path: str, encoding: str = 'utf-8'):
-        if not os.path.isfile(file_path):
-            return
+    erreurs += len(pile)
+    total = len(elements)
+    taux = (erreurs / total) * 100 if total > 0 else 0
+    return round(taux, 2)
 
-        try:
-            with open(file_path, 'r', encoding=encoding) as f:
-                lines = f.readlines()
-        except Exception:
-            return
+def corriger_automatiquement(html):
+    """
+    Corrige automatiquement les balises non fermées en ajoutant les balises manquantes à la fin.
+    Ne corrige pas tout, mais propose une aide basique.
+    """
+    elements = analyser_elements(html)
+    pile = []
+    for elem in elements:
+        if elem['type'] == 'ouvre':
+            pile.append(elem['nom'])
+        elif elem['type'] == 'ferme':
+            if pile and pile[-1] == elem['nom']:
+                pile.pop()
+            else:
+                pass  # ignore pour l’instant
 
-        self.documents_lines[file_path] = [line.strip() for line in lines]
+    for nom in reversed(pile):
+        html += f"</{nom}>"
+    return html
 
-        for line in lines:
-            clean_line = self._clean_line(line)
-            words = clean_line.split()
-            for word in words:
-                if word not in self.index:
-                    self.index[word] = set()
-                self.index[word].add(file_path)
+def ajouter_balise(html, position, balise):
+    """
+    Ajoute une balise HTML à une position spécifique dans le texte.
+    Ex: position=50, balise="<b>Texte</b>"
+    """
+    if position < 0 or position > len(html):
+        return html
+    return html[:position] + balise + html[position:]
 
-    def _clean_line(self, line: str) -> str:
-        line = line.lower()
-        line = re.sub(r"[^a-z0-9\s]", " ", line)
-        line = re.sub(r"\s+", " ", line).strip()
-        return line
+def supprimer_balise(html, nom_balise):
+    """
+    Supprime toutes les occurrences d’une balise (ouvrante et fermante).
+    """
+    pattern = fr"</?{nom_balise}[^>]*?>"
+    return re.sub(pattern, '', html)
 
-    def search_word(self, word: str) -> Dict[str, List[int]]:
-        word = word.lower()
-        result = {}
-        if word not in self.index:
-            return result
-
-        docs = self.index[word]
-        for doc in docs:
-            lines = self.documents_lines.get(doc, [])
-            line_numbers = []
-            for i, line in enumerate(lines, start=1):
-                clean_line = self._clean_line(line)
-                if word in clean_line.split():
-                    line_numbers.append(i)
-            result[doc] = line_numbers
-        return result
-
-    def print_search_results(self, word: str):
-        results = self.search_word(word)
-        if not results:
-            print(f"Le mot '{word}' n'a été trouvé dans aucun document.")
-            return
-
-        print(f"Recherche du mot '{word}':")
-        for doc, lines in results.items():
-            print(f"- Document: {doc}")
-            print(f"  Occurrences aux lignes: {lines}")
-
-if __name__ == "__main__":
-    indexer = SimpleIndexer()
-    files = ['doc1.txt', 'doc2.txt']
-    indexer.index_documents(files)
-
-    mot = 'exemple'
-    indexer.print_search_results(mot)
+def modifier_balise(html, ancien_nom, nouveau_nom):
+    """
+    Remplace une balise HTML par une autre.
+    """
+    html = re.sub(fr"<{ancien_nom}([^>]*)>", fr"<{nouveau_nom}\1>", html)
+    html = re.sub(fr"</{ancien_nom}>", fr"</{nouveau_nom}>", html)
+    return html
